@@ -1,0 +1,16 @@
+# Virtual environments
+
+.venv
+
+#File setting
+pyproject.toml
+uv.lock
+.python-version
+
+
+# Environment variables
+.env
+.env.development
+.env.staging
+.env.production
+
