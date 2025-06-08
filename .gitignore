@@ -13,4 +13,13 @@ uv.lock
 .env.development
 .env.staging
 .env.production
+.env.example
+aws/
+faiss_index/
 
+# hide _pycache_, __init__.py
+__pycache__/
+# __init__.py
+
+test_func/
+logs/
