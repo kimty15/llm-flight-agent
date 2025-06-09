@@ -25,3 +25,5 @@ test_func/
 logs/
 .
 app.log
+scripts/
+src
