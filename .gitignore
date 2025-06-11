@@ -25,5 +25,6 @@ test_func/
 logs/
 .
 app.log
-# scripts/
-src
+scripts/
+# src
+.dockerignore

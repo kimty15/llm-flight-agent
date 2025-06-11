@@ -1,3 +1,5 @@
+"""State definitions for the conversation flow."""
+
 from typing import TypedDict, Annotated, Literal
 from pydantic import BaseModel, Field
 from langgraph.graph import add_messages
@@ -12,4 +14,4 @@ class Router(BaseModel):
     message_type: Literal["food_search_agent", "retrieval_agent", "ignore"] = Field(
         ...,
         description="The type of agent to route the question to food_search_agent or retrieval_agent or ignore"
-    )
+    ) 
