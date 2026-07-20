@@ -1,167 +1,177 @@
-# Nha Trang Tourism Assistant
+# Nha Trang Trip Planner Agent
 
-An AI-powered tourism assistant for Nha Trang, Vietnam, built with FastAPI, LangGraph, and various AI agents.
+Backend agent for planning trips in Nha Trang, Vietnam.
 
-## Features
+It uses:
 
-- 🤖 **AI-Powered Chat**: Intelligent conversation flow using LangGraph
-- 🍽️ **Food Search**: Restaurant and food place recommendations using SerpAPI
-- 📚 **Information Retrieval**: PDF-based knowledge retrieval using FAISS
-- 🌐 **REST API**: FastAPI-based web API
-- 💬 **CLI Interface**: Command-line chat interface
-- 🔍 **Smart Routing**: Automatic query classification and routing
+- FastAPI for the API
+- LangGraph for a controlled workflow
+- FAISS RAG for local Nha Trang knowledge
+- SerpAPI for meal-stop search
+- LangGraph `MemorySaver` for per-session memory
+- Guardrails for input safety
+- Langfuse v2 for optional tracing
 
-## Project Structure
+## Flow
 
-```
-src/
-├── api/                    # FastAPI web interface
-│   ├── routes/            # API route handlers
-│   ├── schemas.py         # Pydantic models
-│   └── main.py           # FastAPI application
-├── core/                  # Core business logic
-│   ├── config.py         # Configuration management
-│   ├── graph.py          # LangGraph workflow
-│   ├── nodes.py          # Graph nodes
-│   └── states.py         # State definitions
-├── agents/               # Specialized AI agents
-│   ├── food_agent/       # Food search functionality
-│   └── retrieval/        # Document retrieval
-├── prompts/              # Prompt templates
-├── param/                # Parameter models
-├── utils/                # Utility functions
-│   └── logger.py         # Logging configuration
-└── cli.py                # Command-line interface
+```text
+User
+  -> FastAPI /api/v1/chat
+  -> Guardrails
+  -> LangGraph
+     -> analyze_request
+     -> retrieve_knowledge
+     -> search_food_if_needed
+     -> generate_response
+  -> Response
 ```
 
-## Setup
+## Key Files
 
-### Prerequisites
+| Path | Purpose |
+| --- | --- |
+| `app.py` | FastAPI app and chat endpoint |
+| `core/agent_factory.py` | Builds the LangGraph workflow |
+| `core/nodes.py` | Workflow node logic |
+| `core/state.py` | Graph state |
+| `agents/retrieval/` | FAISS retrieval |
+| `agents/food_agent/` | SerpAPI food search |
+| `prompts/prompt_template.py` | Agent prompts |
+| `safety/guardrails.py` | Input guardrails |
+| `observability/langfuse_setup.py` | Langfuse callback setup |
+| `docker-compose.yml` | API + Langfuse v2 + Postgres |
 
-- Python 3.12+
-- OpenAI API key
-- SerpAPI key (for food search)
+## Environment
 
-### Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd llm-flight-agent
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Set up environment variables:
-```bash
-# Create .env file
-OPENAI_API_KEY=your_openai_api_key
-SERPAPI_API_KEY=your_serpapi_key
-```
-
-4. Ensure FAISS index exists:
-```bash
-# The FAISS index should be in faiss_index_openai_embeddings/
-# Generate it from your PDF documents if needed
-```
-
-## Usage
-
-### Web API
-
-Start the FastAPI server:
-```bash
-# Using the new structure
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Or using python module
-python -m src.api.main
-```
-
-API endpoints:
-- `POST /api/v1/chat` - Chat with the assistant
-- `GET /api/v1/health` - Health check
-
-### Command Line Interface
+Create `.env`:
 
 ```bash
-python -m src.cli
+copy .env.example .env
 ```
 
-### Example API Usage
+Required values:
 
-```python
-import requests
-
-response = requests.post("http://localhost:8000/api/v1/chat", json={
-    "message": "Tôi muốn tìm quán phở ngon ở Nha Trang",
-    "session_id": "my_session"
-})
-
-print(response.json())
+```dotenv
+OPENAI_API_KEY=...
+SERPAPI_API_KEY=...
+SAVE_PATH=faiss_index_openai_embeddings
 ```
 
-## Configuration
+Optional Langfuse values, after creating a project in Langfuse:
 
-The application uses Pydantic Settings for configuration. Key settings include:
+```dotenv
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
+```
 
-- **LLM Settings**: Model, temperature, embedding model
-- **Search Settings**: Default location, language, country
-- **API Keys**: OpenAI, SerpAPI
-- **Paths**: Data directory, FAISS index path, logs directory
-
-See `src/core/config.py` for all available settings.
-
-## Development
-
-### Running Tests
+## Run Locally
 
 ```bash
-# Run tests (if you have them)
-pytest tests/
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[dev]"
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Code Structure Guidelines
+Health check:
 
-- **Separation of Concerns**: API, business logic, and utilities are separated
-- **Dependency Injection**: Configuration and services are injected where needed
-- **Type Hints**: All functions and classes use proper type annotations
-- **Logging**: Comprehensive logging throughout the application
-- **Error Handling**: Proper exception handling and user-friendly error messages
+```bash
+curl http://localhost:8000/health
+```
 
-### Adding New Agents
+CLI:
 
-1. Create agent in `src/agents/`
-2. Add node in `src/core/nodes.py`
-3. Update graph in `src/core/graph.py`
-4. Add routing logic in router prompt
+```bash
+python -m core.graph
+```
 
-## Environment Variables
+## Run With Docker
 
-Required:
-- `OPENAI_API_KEY`: OpenAI API key for LLM and embeddings
+```bash
+copy .env.example .env
+docker compose up --build
+```
 
-Optional:
-- `SERPAPI_API_KEY`: For food search functionality
-- `DEBUG`: Enable debug mode
-- `HOST`: Server host (default: 0.0.0.0)
-- `PORT`: Server port (default: 8000)
+Services:
 
-## Logging
+- API: `http://localhost:8000`
+- Langfuse v2: `http://localhost:3000`
+- Postgres: internal Langfuse database
 
-Logs are stored in the `logs/` directory with rotation. Configure logging levels in the settings.
+Stop:
 
-## Contributing
+```bash
+docker compose down
+```
 
-1. Follow the existing code structure
-2. Add type hints to all functions
-3. Include docstrings for classes and methods
-4. Update tests for new features
-5. Update this README if needed
+For background mode:
 
-## License
+```bash
+docker compose up --build -d
+```
 
-[Your License Here]
+## Langfuse v2
+
+1. Start Docker Compose.
+2. Open `http://localhost:3000`.
+3. Create an account and project.
+4. Copy project keys into `.env`.
+5. Restart the app:
+
+```bash
+docker compose restart app
+```
+
+Inside Docker Compose, the app uses:
+
+```dotenv
+LANGFUSE_HOST=http://langfuse-server:3000
+```
+
+Useful trace metadata:
+
+- `session_id`
+- `user_id`
+- `request_id`
+- graph node calls
+- LLM calls
+- guardrail flags
+
+## API
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/health` |
+| `POST` | `/api/v1/chat` |
+
+Example:
+
+```json
+{
+  "message": "Plan 2 days in Nha Trang for a couple",
+  "session_id": "demo-1",
+  "user_id": "user-123"
+}
+```
+
+Response includes:
+
+- `response`
+- `session_id`
+- `messages`
+- `request_id`
+- `guardrail_flags`
+
+## Notes
+
+- Memory is per `session_id` and is not durable after app restart.
+- FAISS index is mounted into Docker at `./faiss_index_openai_embeddings`.
+- Langfuse v2 secrets in `.env` should be changed before deployment.
+- Live OpenAI, SerpAPI, and Langfuse behavior requires valid keys.
+
+## Tests
+
+```bash
+python -m pytest
+```

@@ -1,135 +1,93 @@
-import os
-from serpapi import GoogleSearch
-from pydantic_ai import Agent, RunContext
-import asyncio
-from param.params import FoodPlace, FoodSearchResponse, FoodQuery
+from __future__ import annotations
 
+from typing import Any
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from serpapi import GoogleSearch
+
+from config.settings import Settings, get_settings
+from param.params import FoodPlace, FoodQuery, FoodSearchResponse
 from prompts.prompt_template import FOOD_SEARCH_PROMPT
 
-from dotenv import load_dotenv
-load_dotenv()
 
 class FoodSearchAgent:
-    def __init__(self):
-        self.agent = Agent(
-            "openai:gpt-4o",
-            output_type=FoodQuery,
-            food_search_prompt=FOOD_SEARCH_PROMPT
-        )
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
+        self._chain: Any | None = None
 
-    def search_food_places(self, query: str, location: str = None) -> FoodQuery:
-        """
-        Search for food places using SerpAPI.
-        
-        Args:
-            query: The search query (e.g., "pizza", "sushi", "italian food")
-            location: Optional location to search in (e.g., "New York", "London")
-        
-        Returns:
-            FoodSearchResponse containing a list of food places with their details
-        """
-        # Default to Nha Trang if no location specified
+    def _build_chain(self) -> Any:
+        if self._chain is None:
+            llm = ChatOpenAI(
+                model=self.settings.llm_model,
+                temperature=self.settings.temperature,
+            )
+            parser = llm.with_structured_output(FoodQuery)
+            self._chain = (
+                ChatPromptTemplate.from_messages(
+                    [
+                        ("system", FOOD_SEARCH_PROMPT),
+                        ("user", "{query}"),
+                    ]
+                )
+                | parser
+            )
+        return self._chain
+
+    def search_food_places(
+        self, query: str, location: str | None = None
+    ) -> FoodSearchResponse:
         if not location:
-            location = "Nha Trang, Việt Nam"
+            location = self.settings.default_location
         elif "vietnam" not in location.lower() and "việt nam" not in location.lower():
             location = f"{location}, Việt Nam"
-        # print(query)
-        # print(location)
+
         params = {
-                "engine": "google_maps",
-                "q": f"{query} {location}",  # Combine query with location
-                "type": "search",
-                "location": location,
-                "hl": "vi",
-                "gl": "vn",
-                "google_domain": "google.com.vn",
-                "api_key": os.getenv("SERPAPI_API_KEY")
-            }
-            
+            "engine": "google_maps",
+            "q": f"{query} {location}",
+            "type": "search",
+            "location": location,
+            "hl": self.settings.search_language,
+            "gl": self.settings.search_country,
+            "google_domain": self.settings.google_domain,
+            "api_key": self.settings.serpapi_api_key,
+        }
+
         search = GoogleSearch(params)
         results = search.get_dict()
-            
-        places = []
+
+        places: list[FoodPlace] = []
         if "local_results" in results:
-                # Take only the first 2 results
-            for place in results["local_results"][:2]:
-                food_place = FoodPlace(
+            for place in results["local_results"][: self.settings.food_max_results]:
+                places.append(
+                    FoodPlace(
                         name=place.get("title", ""),
                         address=place.get("address", ""),
                         rating=place.get("rating"),
                         price_level=place.get("price"),
-                        type=place.get("type")
+                        type=place.get("type"),
                     )
-                places.append(food_place)
-        
-        return FoodSearchResponse(
-                places=places,
-                location=location
-            )
+                )
 
+        return FoodSearchResponse(places=places, location=location)
 
+    def parse_food_query(self, user_query: str) -> FoodQuery:
+        return self._build_chain().invoke({"query": user_query})
 
-    async def process_food_query(self, user_query: str):
-        """
-        Process a natural language food search query using the agent.
-        
-        Args:
-            user_query: The user's natural language query about food places
-        
-        Returns:
-            FoodSearchResponse containing search results
-        """
-        # Use the agent to parse the query
-        agent_result = await self.agent.run(user_query)
-        parsed_query = agent_result.output  # Access the output field which contains our FoodQuery
-        # print(f"Parsed query: {parsed_query}")
-
-        if not parsed_query.is_nha_trang and parsed_query.location:
-            return None
-        else:
-            # Perform the actual search
-            return self.search_food_places(
-                query=parsed_query.query,
-                location=parsed_query.location
-            )
-    
-    def format_response(self, response: FoodSearchResponse) -> str:
-        """Format the search results into a readable string."""
+    def format_response(self, response: FoodSearchResponse | None) -> str:
         if not response or not response.places:
-            return "I couldn't find any food places matching your query in Nha Trang."
-        
-        formatted = f"Here are some food places in {response.location}:\n\n"
-        for place in response.places:
-            formatted += f"- {place.name}\n"
-            formatted += f"  Address: {place.address}\n"
-            if place.rating:
-                formatted += f"  Rating: {place.rating}\n"
-            if place.price_level:
-                formatted += f"  Price Level: {place.price_level}\n"
-            if place.type:
-                formatted += f"  Type: {place.type}\n"
-            formatted += "\n"
-        
-        return formatted    # Example usage:
-async def main():
-    # Initialize the agent
-    agent = FoodSearchAgent()
-    
-    # Test queries
-    test_queries = [
-        "Tôi muốn tìm quán Phở ở Nha Trang",
-        "Nhà hàng hải sản ngon ở Nha Trang",
-        "Quán cafe đẹp ở Nha Trang",
-        "Tìm quán ăn Việt Nam ở Nha Trang",
-        "Nhà hàng Nhật Bản ở Nha Trang"
-    ]
-    
-    for query in test_queries:
-        print(f"\nQuery: {query}")
-        response = await agent.process_food_query(query)
-        formatted_response = agent.format_response(response)
-        print(formatted_response)
-        print("-" * 50)
+            return "I could not find matching meal stops in Nha Trang right now."
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        lines = [f"Meal stop options in {response.location}:"]
+        for place in response.places:
+            bits = [place.name]
+            if place.type:
+                bits.append(place.type)
+            if place.rating:
+                bits.append(f"rating {place.rating}")
+            if place.price_level:
+                bits.append(f"price {place.price_level}")
+            lines.append(f"- {' | '.join(bits)}")
+            if place.address:
+                lines.append(f"  Address: {place.address}")
+        return "\n".join(lines)

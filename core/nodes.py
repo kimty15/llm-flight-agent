@@ -1,67 +1,114 @@
-from typing import Dict, Any
+from __future__ import annotations
+
+from langchain_core.messages import AIMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
 
-from agents.retrieval.retrieval_agent import RetrievalAgent
 from agents.food_agent.food_search_agent import FoodSearchAgent
-from prompts.prompt_template import ROUTER_PROMPT
-from core.states import State, Router
-from config.setting import LLM_MODEL, TEMPERATURE
+from agents.retrieval.retrieval_agent import RetrievalAgent
+from config.settings import Settings, get_settings
+from core.state import TripState
+from prompts.prompt_template import RESPONSE_PROMPT
 
-class Nodes:
-    def __init__(self):
-        self.retrieval_agent = RetrievalAgent()
-        self.food_search_agent = FoodSearchAgent()
+PLAN_KEYWORDS = (
+    "plan",
+    "itinerary",
+    "trip",
+    "schedule",
+    "lịch trình",
+    "kế hoạch",
+    "du lịch",
+    "ngày",
+)
 
-    def router(self, state: State):
-        """Route the query to the appropriate agent based on content."""
-        message = state["messages"][-1]
-        query = message.content
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", ROUTER_PROMPT),
-            ("user", query)
-        ])
-        
-        llm = ChatOpenAI(model=LLM_MODEL, temperature=TEMPERATURE)
-        llm_router = llm.with_structured_output(Router)
-        
-        chain = prompt | llm_router
-        result = chain.invoke({"query": query})
-        
-        return {"message_type": result.message_type}
+FOOD_KEYWORDS = (
+    "food",
+    "restaurant",
+    "cafe",
+    "coffee",
+    "lunch",
+    "dinner",
+    "breakfast",
+    "eat",
+    "ăn",
+    "quán",
+    "cà phê",
+    "cafe",
+    "bữa",
+    "hải sản",
+)
 
-    async def food_search_node(self, state: State) -> State:
-        """Handle food-related queries."""
-        message = state["messages"][-1]
-        query = message.content
-        response = await self.food_search_agent.process_food_query(query)
-        formatted_response = self.food_search_agent.format_response(response)
-        
-        return {
-            "messages": [{"role": "assistant", "content": formatted_response}]
+retrieval_agent = RetrievalAgent()
+food_agent = FoodSearchAgent()
+
+
+def latest_user_text(state: TripState) -> str:
+    messages = state.get("messages", [])
+    for message in reversed(messages):
+        if getattr(message, "type", "") == "human":
+            return str(getattr(message, "content", ""))
+    return ""
+
+
+def has_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in keywords)
+
+
+def analyze_request(state: TripState) -> dict:
+    text = latest_user_text(state)
+    needs_food = has_keyword(text, FOOD_KEYWORDS)
+    wants_plan = has_keyword(text, PLAN_KEYWORDS) or needs_food
+    return {
+        "mode": "plan" if wants_plan else "qa",
+        "needs_food": needs_food,
+    }
+
+
+def retrieve_knowledge(state: TripState) -> dict:
+    question = latest_user_text(state)
+    if not question:
+        return {"knowledge_context": ""}
+    try:
+        return {"knowledge_context": retrieval_agent.run(question)}
+    except Exception as e:
+        return {"knowledge_context": f"Knowledge lookup unavailable: {type(e).__name__}"}
+
+
+def search_food_if_needed(state: TripState) -> dict:
+    if not state.get("needs_food"):
+        return {"food_context": ""}
+
+    query = latest_user_text(state)
+    try:
+        parsed = food_agent.parse_food_query(query)
+        if not parsed.is_nha_trang and parsed.location:
+            return {"food_context": "Meal-stop search is limited to Nha Trang."}
+        result = food_agent.search_food_places(parsed.query, parsed.location)
+        return {"food_context": food_agent.format_response(result)}
+    except Exception as e:
+        return {"food_context": f"Meal-stop search unavailable: {type(e).__name__}"}
+
+
+def generate_response(state: TripState, settings: Settings | None = None) -> dict:
+    s = settings or get_settings()
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", RESPONSE_PROMPT),
+            (
+                "user",
+                "Mode: {mode}\n\nUser request:\n{request}\n\nKnowledge context:\n{knowledge_context}\n\nFood context:\n{food_context}",
+            ),
+        ]
+    )
+    llm = ChatOpenAI(model=s.llm_model, temperature=s.temperature)
+    chain = prompt | llm
+    response = chain.invoke(
+        {
+            "mode": state.get("mode", "qa"),
+            "request": latest_user_text(state),
+            "knowledge_context": state.get("knowledge_context", ""),
+            "food_context": state.get("food_context", ""),
         }
-
-    def retrieval_node(self, state: State) -> State:
-        """Handle general information queries."""
-        message = state["messages"][-1]
-        query = message.content
-        response = self.retrieval_agent.run(query)
-        return {
-            "messages": [{"role": "assistant", "content": response}]
-        }
-
-    def ignore_node(self, state: State) -> State:
-        """Handle out-of-scope queries."""
-        return {
-            "messages": [{"role": "assistant", "content": "I can only help with queries about Nha Trang. Please ask a question related to Nha Trang, Vietnam."}]
-        }
-
-    def route_based_on_router(self, state: State) -> str:
-        """Determine which node to route to based on message type."""
-        if state["message_type"] == "food_search_agent":
-            return "food_search_agent"
-        elif state["message_type"] == "retrieval_agent":
-            return "retrieval_agent"
-        elif state["message_type"] == "ignore":
-            return "ignore"
+    )
+    return {"messages": [AIMessage(content=str(response.content))]}

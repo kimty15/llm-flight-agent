@@ -1,19 +1,20 @@
+"""Backward-compatible constants; prefer `config.settings.get_settings()`."""
 
-# LLM Settings
-LLM_MODEL: str = "gpt-4o-mini"
-EMBEDDING_MODEL: str = "text-embedding-3-small"
-TEMPERATURE: float = 0
-K_RESULTS: int = 2
+from config.settings import get_settings
 
-# Search Settings
-DEFAULT_LOCATION: str = "Nha Trang, Việt Nam"
+_s = get_settings()
+
+LLM_MODEL: str = _s.llm_model
+EMBEDDING_MODEL: str = _s.embedding_model
+TEMPERATURE: float = _s.temperature
+K_RESULTS: int = _s.k_results
+SAVE_PATH: str = _s.faiss_index_path
+
+DEFAULT_LOCATION: str = _s.default_location
 SEARCH_ENGINE: str = "google_maps"
-LANGUAGE: str = "vi"
-COUNTRY: str = "vn"
-GOOGLE_DOMAIN: str = "google.com.vn"
-MAX_RESULTS: int = 2
+LANGUAGE: str = _s.search_language
+COUNTRY: str = _s.search_country
+GOOGLE_DOMAIN: str = _s.google_domain
+MAX_RESULTS: int = _s.food_max_results
 
-
-# PDF Settings
-PDF_PATH: str = r"=data\www-etrip4u-com-du-lich-thong-tin-tong-quat-ve-du-lich-nha-trang.pdf"
-SAVE_PATH: str = r"faiss_index_openai_embeddings"
+PDF_PATH: str = r"data\www-etrip4u-com-du-lich-thong-tin-tong-quat-ve-du-lich-nha-trang.pdf"

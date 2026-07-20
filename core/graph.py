@@ -1,81 +1,41 @@
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+"""CLI chat loop using the unified trip planner agent (optional dev utility)."""
 
-from core.states import State
-from core.nodes import Nodes
+from __future__ import annotations
 
-class TravelAssistantGraph:
-    def __init__(self):
-        self.nodes = Nodes()
-        self.memory = MemorySaver()
+import asyncio
 
-    def create_graph(self):
-        graph = StateGraph(State)
+from langchain_core.messages import HumanMessage
 
-        graph.add_node("router", self.nodes.router)
-        graph.add_node("food_search_agent", self.nodes.food_search_node)
-        graph.add_node("retrieval_agent", self.nodes.retrieval_node)
-        graph.add_node("ignore", self.nodes.ignore_node)
+from core.agent_factory import build_trip_planner_graph
 
-        # Set entry point
-        graph.set_entry_point("router")
 
-        # Add conditional edges
-        graph.add_conditional_edges(
-            "router",
-            self.nodes.route_based_on_router,
-            {
-                "food_search_agent": "food_search_agent",
-                "retrieval_agent": "retrieval_agent",
-                "ignore": "ignore"
-            }
-        )
-        # Add edges
-        graph.add_edge("food_search_agent", END)
-        graph.add_edge("retrieval_agent", END)
-        graph.add_edge("ignore", END)
-
-        assistant = graph.compile(checkpointer=self.memory)
-        return assistant
-    
-async def chat_loop():
-    """Main chat loop for interaction."""
-    print("Welcome to Nha Trang Tourism Assistant!")
-    print("You can ask about food places, attractions, transportation, and more in Nha Trang.")
+async def chat_loop() -> None:
+    print("Welcome to Nha Trang Trip Planner Agent!")
+    print("Ask for Nha Trang itineraries, food stops, attractions, transport, and trip refinements.")
     print("Type 'exit' to end the conversation.")
     print("-" * 50)
-    
-    # Initialize graph and state
-    graph = TravelAssistantGraph()
-    app = graph.create_graph()
-    
-    state = {
-        "messages": [],
-        "message_type": None
-    }
-    
+
+    graph = build_trip_planner_graph()
+    thread_id = "cli-session"
+
     while True:
         user_input = input("\nYou: ").strip()
-        
-        if user_input.lower() == 'exit':
-            print("\nGoodbye! Thank you for using Nha Trang Tourism Assistant.")
+        if user_input.lower() == "exit":
+            print("\nGoodbye! Thank you for using Nha Trang Trip Planner Agent.")
             break
-        
-        state["messages"].append({"role": "user", "content": user_input})
-        
+
         try:
-            result = await app.ainvoke(state, config={"configurable": {"thread_id": "1"}})
-            assistant_message = result["messages"][-1].content
-            print("\nAssistant:", assistant_message)
-            state = result
-            
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content=user_input)]},
+                config={"configurable": {"thread_id": thread_id}},
+            )
+            msgs = result.get("messages", [])
+            last = msgs[-1] if msgs else None
+            text = getattr(last, "content", str(last)) if last else ""
+            print("\nAssistant:", text)
         except Exception as e:
-            print(f"\nError: {str(e)}")
-            print("Please try again with a different query.")
+            print(f"\nError: {e}")
+
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(chat_loop())        
-        
-        
-
+    asyncio.run(chat_loop())

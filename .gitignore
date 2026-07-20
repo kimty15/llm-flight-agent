@@ -2,8 +2,7 @@
 
 .venv
 
-#File setting
-pyproject.toml
+# File setting
 uv.lock
 .python-version
 
@@ -19,11 +18,13 @@ faiss_index/
 
 # hide _pycache_, __init__.py
 __pycache__/
+*.egg-info/
+.pytest_cache/
+chat_sessions.db
 # __init__.py
 
 test_func/
 logs/
-.
 app.log
 scripts/
 src
