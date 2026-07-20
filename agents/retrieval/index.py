@@ -1,9 +1,11 @@
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-import fitz
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None  # type: ignore[assignment]
 from config.setting import EMBEDDING_MODEL, PDF_PATH, SAVE_PATH
 
 class IndexBuilder:
@@ -22,6 +24,8 @@ class IndexBuilder:
     
     def extract_text_with_fitz(self):
         """Extract text from a PDF file using fitz (PyMuPDF)."""
+        if fitz is None:
+            raise RuntimeError("Install pymupdf for PDF indexing: pip install pymupdf")
         text = ""
         doc = fitz.open(self.pdf_path)
         for page_num in range(len(doc)):
